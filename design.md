@@ -246,3 +246,13 @@ Coupled {
   SymUse b.y
   SymUse b.z
 }
+```
+
+Future directions / The long run
+================================
+
+Intrinsics
+==========
+It's possible to use SMT solver for intrinsics
+
+example of this: https://github.com/zwegner/x86-sat
