@@ -41,6 +41,11 @@ in example if we need to use in program a sym, code with b and c syms also
 stays after `simplifier`
 `Refinement` node can show that value is refinement
 
+Facts
+=====
+If the check is proved or cannot be proved, it becomes a fact.
+When check can't be proved, in any case, it will be added in real time and if there is no error, then it is correct, i.e. this is a fact and we can further build static analysis on this, else there will be just a real-time error and that’s it.
+
 Arrays
 ======
 Arrays represented as Vector (just fixed-length seq of values)
@@ -104,8 +109,12 @@ var x: range[1..6] = 3
 IR:
 ```nim
 x = Scalar {Int64 3}
-Constraint x >= 1
-Constraint x <= 6
+Check {
+  0 # is fact or not
+  Range
+  Constraint x >= 1
+  Constraint x <= 6
+}
 ``` 
 
 Objects

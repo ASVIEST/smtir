@@ -16,12 +16,15 @@ type
     ImmediateVal
     Typed
 
+    ExternalSymUse
+
+    SymUse
+    SymAsgn # {ImmediateVal, Scalar | Vector | (Add | Sub | Div | Mul | Mod)}
+
     Scalar # {ValueType, ImmediateVal+ | None}
     Vector # {Scalar, ImmediateVal}
 
-    SymAsgn # {ImmediateVal, Scalar | Vector}
-    SymUse
-    ExternalSymUse
+    
 
     Conv # {Typed, Typed, SymUse | Scalar} # A -> B 
     Coupled # {ExternalSymUse, ImmediateVal+} useful in simplifier
@@ -29,6 +32,13 @@ type
 
     Concat # {(SymUse | BitVec)+}
     Extract # {Range, SymUse | BitVec}
+    
+    Constraint
+    Eq
+    Le
+    Lt
+
+    Check # {ImmediateVal #[isFact]#, CheckType, Constraint+}
 
     # SAT theory
     And
@@ -59,7 +69,7 @@ type
 
 const
   LastVectorType {.used.} = Rational
-  LastAtomicValue {.used.} = Typed
+  LastAtomicValue {.used.} = SymUse
   OpcodeBits = 8'u32
   OpcodeMask = (1'u32 shl OpcodeBits) - 1'u32
 
@@ -96,13 +106,24 @@ template build*(tree: var Tree; info: PackedLineInfo; kind: NodeKind; body: unty
 proc addSymUse*(t: var Tree; info: PackedLineInfo; s: SymId) {.inline.} =
   t.nodes.add Node(x: toX(SymUse, uint32(s)), info: info)
 
+proc symId*(ins: Node): SymId {.inline.} =
+  assert ins.kind == SymUse
+  SymId(ins.operand)
+
+proc addTyped*(t: var Tree; info: PackedLineInfo; typ: ValueType) {.inline.} =
+  assert typ.int >= 0
+  t.nodes.add Node(x: toX(Typed, cast[uint32](typ)), info: info)
+
+proc addNone*(t: var Tree; info: PackedLineInfo) {.inline.} =
+  t.nodes.add Node(x: toX(None, 0'u32), info: info)
+
 proc addImmediateVal*(t: var Tree; info: PackedLineInfo; x: int) =
   assert x >= 0 and x < ((1 shl 32) - OpcodeBits.int)
   t.nodes.add Node(x: toX(ImmediateVal, uint32(x)), info: info)
 
-proc immediateVal*(ins: Node): int {.inline.} =
-  assert ins.kind == ImmediateVal
-  result = cast[int](ins.operand)
+proc immediateVal*(n: Node): int {.inline.} =
+  assert n.kind == ImmediateVal
+  result = cast[int](n.operand)
 
 template `[]`*(t: Tree; n: NodePos): Node = t.nodes[n.int]
 
@@ -119,10 +140,6 @@ proc nextChild(tree: Tree; pos: var int) {.inline.} =
 
 proc next*(tree: Tree; pos: var NodePos) {.inline.} = nextChild tree, int(pos)
 
-template firstSon*(n: NodePos): NodePos = NodePos(n.int+1)
-
-template skipTyped*(n: NodePos): NodePos = NodePos(n.int+2)
-
 iterator sons*(tree: Tree; n: NodePos): NodePos =
   var pos = n.int
   assert tree.nodes[pos].kind > LastAtomicValue
@@ -132,11 +149,38 @@ iterator sons*(tree: Tree; n: NodePos): NodePos =
     yield NodePos pos
     nextChild tree, pos
 
+proc isAtom(tree: Tree; pos: NodePos): bool {.inline.} = tree.nodes[pos.int].kind <= LastAtomicValue
+
+proc span(tree: Tree; pos: int): int {.inline.} =
+  if tree.nodes[pos].kind <= LastAtomicValue: 1 else: int(tree.nodes[pos].operand)
+
+proc sons2*(tree: Tree; n: NodePos): (NodePos, NodePos) {.inline.} =
+  assert(not isAtom(tree, n))
+  let a = n.int+1
+  let b = a + span(tree, a)
+  result = (NodePos a, NodePos b)
+
+iterator sonsFromN*(tree: Tree; n: NodePos; toSkip = 2): NodePos =
+  var pos = n.int
+  assert tree.nodes[pos].kind > LastAtomicValue
+  let last = pos + tree.nodes[pos].rawSpan
+  inc pos
+  for i in 1..toSkip:
+    nextChild tree, pos
+  while pos < last:
+    yield NodePos pos
+    nextChild tree, pos
 
 proc render*(t: Tree; n: NodePos; s: var string; nesting = 0) =
   for _ in 0..<nesting: s.add "  "
   case t[n].kind:
-  of ImmediateVal: s.add($t[n].immediateVal)
+  of None: s.add "None"
+  of ImmediateVal: s.add $t[n].immediateVal
+  of SymUse:
+    s.add "SymUse "
+    s.add $(SymId t[n].operand)
+  of Typed:
+    s.add '<' & $cast[ValueType](t[n].operand) & '>'
   else:
     s.add $t[n].kind
     s.add " {\n"
@@ -151,4 +195,5 @@ proc render*(t: Tree; s: var string) =
   var i = 0
   while i < t.len:
     render t, NodePos i, s
+    s.add '\n'
     nextChild t, i
