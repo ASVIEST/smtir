@@ -265,3 +265,118 @@ Intrinsics
 It's possible to use SMT solver for intrinsics
 
 example of this: https://github.com/zwegner/x86-sat
+
+Concurrent code analysis
+========================
+https://dl.acm.org/doi/10.1145/3335149
+
+Recursive functions analysis
+============================
+Requirements:
+1. Function is deterministic
+2. (Maybe) Function should be bijection
+
+Prove that recursion terminated
+http://lara.epfl.ch/~kuncak/papers/SuterETAL11SatisfiabilityModuloRecursivePrograms.pdf
+https://www.cs.cornell.edu/courses/JavaAndDS/files/recursionbf.pdf
+https://www.fstar-lang.org/tutorial/book/part1/part1_termination.html
+
+Let us have a measure that depends on the arguments of the function and returns number. Each new (different) call creates a new measure. If new measure > old, function is non terminated.
+
+let p is any base case, for fib it's x = 0, x in {1, 2}
+measure(p) <= 0
+for recursive case measure > 0
+
+```nim
+proc fib(n: int): int =
+  if n == 0: 0
+  elif n < 3: 1
+  else: fib(n - 1) + fib(n - 2)
+```
+known facts:
+measure(n == 0) <= 0
+measure(n < 3) <= 0
+measure(not(n == 0 or n < 3)) > 0
+
+inner measure must be smaller, it means that we need to prove that
+measure(n - 1) < measure(n)
+measure(n - 2) < measure(n)
+
+And it can be simply proved by induction
+measure(n - 1) < measure(n)
+measure(n - 2) < measure(n - 1) < measure(n)
+...
+measure(n < 3) < measure(n)
+
+measure(n < 3) <= 0
+measure(n) > 0, so it proved
+
+```nim
+proc inf(n: int): int = inf(n - 1)
+```
+facts:
+measure(n) > 0
+measure(n - 1) > 0
+
+measure(n - 1) < measure(n)
+
+we can't prove that measure(n - 1) < measure(n), it is not terminated
+
+```nim
+proc inf(n: int): int = inf(n)
+```
+facts:
+measure(n) > 0
+measure(n) < measure(n) => 0 < 0 => W
+
+Also recursive functions analysis can be useful for recursive functions optimization. Note: it's very hard.
+Must be better than tail call optimization.
+
+```nim
+proc fib(n: int): int =
+  if n == 0: 0
+  elif n < 3: 1
+  else: fib(n - 1) + fib(n - 2)
+```
+Uses recursive functions theory
+
+let `fib` is recursive function with body:
+```py
+If(
+  n == 0, 
+  0, 
+  If(
+    n < 3, 
+    Int(1), 
+    fib(n - 1) + fib(n - 2)
+  )
+)
+```
+For optimizing we need produce code like this
+
+(with refinement types no if, but that's not that important)
+
+It in general, for alghorithm like this, of course
+ Matrix exponentiation and Fast doubling is faster.
+
+```nim
+proc fib(n: int): int =
+  if n == 0: return 0
+  result = 1
+  var old = 1
+  for i in 2..<n:
+    (result, old) = (result + old, result)
+```
+
+This may seem complicated, but it's not entirely true.
+First, we know that for any recursion need to modify different call comb vals.
+```nim
+proc f(x: int): int =
+  ...
+  let a = f(x - 1) + f(x - 5) + f(x - 8)
+  let b = f(x - 1)
+```
+As we know that f deterministic, a = b + f(x - 5) + f(x - 8) and
+we need to store 3 vals: x - 1, x - 5, x - 8
+
+It might seem like we should just use quantifiers, but it have one problem. Quantifiers are hard for SMT solvers. Recursive definitions are hard for SMT solvers. It means that we should not use it both (It don't include inner func analysis with quantifiers).
