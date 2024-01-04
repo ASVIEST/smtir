@@ -141,7 +141,11 @@ proc genLValue(c: var Z3Gen; t: Tree; n: NodePos) =
         let counterex = strip(
           $Z3_model_to_string(c.z3, Z3_solver_get_model(c.z3, solver))
         )
-        raise newException(Z3Exception, "counter example:  " & counterex)
+        if counterex.len > 0:
+          raise newException(Z3Exception, "Check falid. counter example:  " & counterex)
+        else:
+          raise newException(Z3Exception, "Check failed")
+
       else: c.facts.add constraints
     
     discard typ
