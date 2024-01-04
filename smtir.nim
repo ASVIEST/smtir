@@ -38,7 +38,7 @@ type
     Le
     Lt
 
-    Check # {ImmediateVal #[isFact]#, CheckType, Constraint+}
+    Checked # {ImmediateVal #[isFact]#, CheckType, Constraint+}
 
     # SAT theory
     And

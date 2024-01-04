@@ -14,6 +14,8 @@ type
     facts: seq[Z3_ast]
     # strings*: BiTable[string]
     syms*: Table[SymId, Z3_ast]
+  
+  Z3Exception = object of ValueError
 
 template binOp(op; needList: static bool = false): untyped =
   let (a, b) = sons2(t, n)
@@ -89,27 +91,58 @@ proc toString*(c: Z3_context; v: Z3_ast): string =
   {.push hint[ConvFromXtoItselfNotNeeded]: off.}
   $Z3_ast_to_string(c, v.Z3_ast)
 
+proc prove(
+  c: Z3Gen; 
+  constraints: seq[Z3_ast],
+  facts: seq[Z3_ast]
+): Z3_ast =
+  # not(facts -> question)
+  # not(not facts or question)
+  # facts and not question, if found solution, then it's invalid
+  
+  let question = Z3_mk_and(c.z3, cuint constraints.len, constraints[0].addr)
+  let factsExpr =
+    if facts.len > 0:
+      Z3_mk_and(c.z3, cuint facts.len, facts[0].addr)
+    else:
+      Z3_mk_true(c.z3)
 
+  var comb = [Z3_mk_not(c.z3, question), factsExpr]
+  Z3_mk_and(c.z3, 2, addr(comb[0]))
+
+import strutils
 proc genLValue(c: var Z3Gen; t: Tree; n: NodePos) =
   case t[n].kind
   of SymAsgn:
     let (le, ri) = sons2(t, n)
     c.syms[t[le].symId] = c.genRValue(t, ri)
 
-  of Check:
+  of Checked:
     # check node and maybe make modify tree and make it fact
     let (isFact, typ) = sons2(t, n)
 
     var constraints: seq[Z3_ast] = @[]
     for ch in sonsFromN(t, n, 2):
       constraints.add genRValue(c, t, ch)
-    
-    let question: Z3_ast
-    if t[isFact].operand == 0:
-      question = Z3_mk_and(c.z3, cuint constraints.len, constraints[0].addr)
-      echo toString(c.z3, question)
+    assert constraints.len > 0, "Checked node dont have constraints"
+
+    if t[isFact].operand == 1: c.facts.add constraints
     else:
-      question = Z3_ast.default
+      let solver = Z3_mk_solver(c.z3)
+      let res = prove(
+        c,
+        constraints,
+        c.facts
+      )
+      echo toString(c.z3, Z3_simplify(c.z3, res))
+      Z3_solver_assert(c.z3, solver, res)
+      let z3res = Z3_solver_check(c.z3, solver)
+      if z3res == Z3_L_TRUE:
+        let counterex = strip(
+          $Z3_model_to_string(c.z3, Z3_solver_get_model(c.z3, solver))
+        )
+        raise newException(Z3Exception, "counter example:  " & counterex)
+      else: c.facts.add constraints
     
     discard typ
 
@@ -121,6 +154,10 @@ proc gen(c: var Z3Gen; t: Tree) =
   while i.int < t.len:
     genLValue c, t, i
     next t, i
+
+proc onErr(ctx: Z3_context, e: Z3_error_code) {.nimcall.} =
+  let msg = $Z3_get_error_msg(ctx, e)
+  raise newException(Z3Exception, msg)
 
 when isMainModule:
   var t = Tree()
@@ -142,7 +179,9 @@ when isMainModule:
         t.addTyped info, Int
         t.addImmediateVal info, 4
   
-  t.build info, Check:
+  # SymId 0 = 1 + 4
+  # 1 <= SymId 0 < 6
+  t.build info, Checked:
     t.addImmediateVal info, 0
     t.addNone info # it not used for now
     t.build info, And:
@@ -164,6 +203,11 @@ when isMainModule:
 
   let cfg = Z3_mk_config()
   Z3_set_param_value(cfg, "model", "true")
+  
+  Z3_set_param_value(cfg, "well_sorted_check", "true")
+  Z3_set_param_value(cfg, "trace", "true")
   var c = Z3Gen(z3: Z3_mk_context(cfg))
+  Z3_set_error_handler(c.z3, onErr)
+
   gen(c, t)
   echo toString(c.z3, c.syms[SymId 42])
