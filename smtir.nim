@@ -10,6 +10,7 @@ type
 
     Seq
     Array
+    BitVec
 
   NodeKind* = enum
     None
@@ -26,7 +27,7 @@ type
 
     
 
-    Conv # {Typed, Typed, SymUse | Scalar} # A -> B 
+    Conv # {Typed #[new type]#, Typed #[old type]#, SymUse | Scalar} # B -> A 
     Coupled # {ExternalSymUse, ImmediateVal+} useful in simplifier
     Range # {ImmediateVal | None, ImmediateVal | None}
 
@@ -159,6 +160,13 @@ proc sons2*(tree: Tree; n: NodePos): (NodePos, NodePos) {.inline.} =
   let a = n.int+1
   let b = a + span(tree, a)
   result = (NodePos a, NodePos b)
+
+proc sons3*(tree: Tree; n: NodePos): (NodePos, NodePos, NodePos) {.inline.} =
+  assert(not isAtom(tree, n))
+  let a = n.int+1
+  let b = a + span(tree, a)
+  let c = b + span(tree, b)
+  result = (NodePos a, NodePos b, NodePos c)
 
 iterator sonsFromN*(tree: Tree; n: NodePos; toSkip = 2): NodePos =
   var pos = n.int

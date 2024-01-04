@@ -81,6 +81,21 @@ func genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
   of Div: binOp(Z3_mk_div)
   of Mul: binOp(Z3_mk_mul, true)
   of Mod: binOp(Z3_mk_mod)
+  of Conv:
+    let (newTypRaw, oldTypRaw, sRaw) = sons3(t, n)
+    let (newTyp, oldTyp, s) = (
+      cast[ValueType](t[newTypRaw].operand), 
+      cast[ValueType](t[oldTypRaw].operand),
+      t[sRaw].symId
+    )
+
+    # where my pattern matching ?
+    if newTyp == BitVec and oldTyp == Int:
+      Z3_mk_int2bv(c.z3, cuint 32, c.syms[s])
+    elif newTyp == Int and oldTyp == BitVec:
+      Z3_mk_bv2int(c.z3, c.syms[s], true)
+    else:
+      raiseAssert "Invalid conv"
   else:
     raiseAssert "never"
 
@@ -200,6 +215,14 @@ when isMainModule:
           t.addTyped info, Int
           t.addImmediateVal info, 1
         t.addSymUse info, SymId 42
+  
+  t.build info, SymAsgn:
+    t.addSymUse info, SymId 43
+
+    t.build info, Conv:
+      t.addTyped info, BitVec
+      t.addTyped info, Int
+      t.addSymUse info, SymId 42
 
   var s = ""
   render(t, s)
