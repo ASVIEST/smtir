@@ -106,7 +106,7 @@ proc toString*(c: Z3_context; v: Z3_ast): string =
   {.push hint[ConvFromXtoItselfNotNeeded]: off.}
   $Z3_ast_to_string(c, v.Z3_ast)
 
-proc prove(
+proc proveExpr(
   c: Z3Gen; 
   constraints: seq[Z3_ast],
   facts: seq[Z3_ast]
@@ -125,6 +125,33 @@ proc prove(
   var comb = [Z3_mk_not(c.z3, question), factsExpr]
   Z3_mk_and(c.z3, 2, addr(comb[0]))
 
+type
+  ProveResult = enum
+    Unknown
+    Proved
+    UnProved
+
+proc prove(
+  c: Z3Gen;
+  solver:var Z3_solver;
+  constraints: seq[Z3_ast],
+  facts: seq[Z3_ast]
+): ProveResult =
+  let solver = Z3_mk_solver(c.z3)
+  let toProve = proveExpr(
+    c,
+    constraints,
+    c.facts
+  )
+  echo toString(c.z3, Z3_simplify(c.z3, toProve))
+  Z3_solver_assert(c.z3, solver, toProve)
+  let z3res = Z3_solver_check(c.z3, solver)
+  
+  case z3res
+  of Z3_L_TRUE: Proved
+  of Z3_L_FALSE: UnProved
+  of Z3_L_UNDEF: Unknown
+
 import strutils
 proc genLValue(c: var Z3Gen; t: Tree; n: NodePos) =
   case t[n].kind
@@ -141,18 +168,16 @@ proc genLValue(c: var Z3Gen; t: Tree; n: NodePos) =
       constraints.add genRValue(c, t, ch)
     assert constraints.len > 0, "Checked node dont have constraints"
 
-    if t[isFact].operand == 1: c.facts.add constraints
+    if bool(t[isFact].operand): c.facts.add constraints
     else:
-      let solver = Z3_mk_solver(c.z3)
-      let res = prove(
+      var solver = Z3_mk_solver(c.z3)
+      let proveResult = prove(
         c,
+        solver,
         constraints,
         c.facts
       )
-      echo toString(c.z3, Z3_simplify(c.z3, res))
-      Z3_solver_assert(c.z3, solver, res)
-      let z3res = Z3_solver_check(c.z3, solver)
-      if z3res == Z3_L_TRUE:
+      if proveResult == Proved:
         let counterex = strip(
           $Z3_model_to_string(c.z3, Z3_solver_get_model(c.z3, solver))
         )
