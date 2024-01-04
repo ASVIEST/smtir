@@ -32,6 +32,9 @@ template binOp(op; needList: static bool = false): untyped =
       args[0].addr
     )
 
+template unaryOp(op): untyped =
+  op(c.z3, c.genRValue(t, n.firstSon))
+
 template mk_var(name: string, ty: Z3_sort): Z3_ast =
   let sym = Z3_mk_string_symbol(c.z3, name)
   Z3_mk_const(c.z3, sym, ty)
@@ -81,6 +84,14 @@ func genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
   of Div: binOp(Z3_mk_div)
   of Mul: binOp(Z3_mk_mul, true)
   of Mod: binOp(Z3_mk_mod)
+  
+  of BitShl: binOp(Z3_mk_bvshl)
+  of BitShr: binOp(Z3_mk_bvashr) #why need logical shr ?
+  of BitAnd: binOp(Z3_mk_bvand)
+  of BitOr: binOp(Z3_mk_bvor)
+  of BitXor: binOp(Z3_mk_bvxor)
+  of BitNot: unaryOp(Z3_mk_bvnot)
+
   of Conv:
     let (newTypRaw, oldTypRaw, sRaw) = sons3(t, n)
     let (newTyp, oldTyp, s) = (
