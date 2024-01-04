@@ -329,6 +329,54 @@ facts:
 measure(n) > 0
 measure(n) < measure(n) => 0 < 0 => W
 
+Limitation:
+Note: this fib is also untermiated, but proved:
+```nim
+proc fib(n: int): int =
+  if n == 0: 0
+  elif n in [1, 2]: 1
+  else: fib(n - 1) + fib(n - 2)
+```
+we can get fib(-1) and it will endless (until StackOverflowError).
+for make it termianted we need say that n >= 0.
+facts:
+fib(0) = 0
+fib(1) = fib(2) = 1
+fib(n != {0, 1, 2}) = fib(n - 1) + fib(n - 2)
+
+to prove:
+m: m != {0, 1, 2}
+fib(m - 1) < fib(m)
+fib(m - 2) < fib(m)
+
+fib(m - 2) < fib(m - 1) =>
+fib(2) < fib(3) => proved, but it wrong, because we can use n < 0, this step is because m > 3, we can't do this step is m < 0.
+
+In theory this should also work with non-primitive recursive functions
+```nim
+proc ackermann(n, m: int): int =
+  if n == 0: m + 1
+  elif m == 0: ackermann(n - 1, 1)
+  else: ackermann(n - 1, ackermann(n, m - 1))
+```
+facts:
+measure(0, m) <= 0
+measure(n, 0) > 0
+measure(n != 0, m != 0) > 0
+
+to prove:
+measure(n - 1, 1) < measure(n, 0) # n = 1
+measure(n - 1, measure(n, m - 1)) < measure(n != 0, m != 0)
+=>
+we need to prove that
+measure(0, 1) < measure(1, 0)
+
+measure(0, 1) <= 0
+measure(1, 0) > 0
+it means that function terminated
+
+General algorithm: if we have x1, x2, x3, ..., xn that can be used in measure than the func terminated. It not perfect, because it says that func terminated if it has at least one args combination in which this is not terminated, but through quantifiers it does not work normally.
+
 Also recursive functions analysis can be useful for recursive functions optimization. Note: it's very hard.
 Must be better than tail call optimization.
 
