@@ -179,6 +179,10 @@ iterator sonsFromN*(tree: Tree; n: NodePos; toSkip = 2): NodePos =
     yield NodePos pos
     nextChild tree, pos
 
+proc rangeBounds*(t: Tree, n: NodePos): Slice[uint32] =
+  let (le, ri) = sons2(t,n)
+  t[le].operand .. t[ri].operand
+
 proc render*(t: Tree; n: NodePos; s: var string; nesting = 0) =
   for _ in 0..<nesting: s.add "  "
   case t[n].kind:

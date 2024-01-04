@@ -107,6 +107,16 @@ func genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
       Z3_mk_bv2int(c.z3, c.syms[s], true)
     else:
       raiseAssert "Invalid conv"
+  
+  of Extract:
+    let (rng, s) = sons2(t, n)
+    let bounds = rangeBounds(t, rng)
+    Z3_mk_extract(c.z3, bounds.a, bounds.b, c.genRValue(t, s))
+
+  of Concat:
+    let (le, ri) = sons2(t, n)
+    Z3_mk_concat(c.z3, c.genRValue(t, le), c.genRValue(t, ri))
+
   else:
     raiseAssert "never"
 
