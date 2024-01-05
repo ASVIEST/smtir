@@ -154,11 +154,10 @@ type
 
 proc prove(
   c: Z3Gen;
-  solver:var Z3_solver;
+  solver: var Z3_solver;
   constraints: seq[Z3_ast],
   facts: seq[Z3_ast]
 ): ProveResult =
-  let solver = Z3_mk_solver(c.z3)
   let toProve = proveExpr(
     c,
     constraints,
@@ -203,14 +202,10 @@ proc genLValue(c: var Z3Gen; t: Tree; n: NodePos) =
           $Z3_model_to_string(c.z3, Z3_solver_get_model(c.z3, solver))
         )
         if counterex.len > 0:
-          raise newException(Z3Exception, "Check falid. counter example:  " & counterex)
+          raise newException(Z3Exception, $t[typ].checkTypeVal & " check falid. counter example:  " & counterex)
         else:
-          raise newException(Z3Exception, "Check failed")
-
+          raise newException(Z3Exception, $t[typ].checkTypeVal & " check failed")
       else: c.facts.add constraints
-    
-    discard typ
-
   else:
     raiseAssert "Invalid lvalue: " & $t[n].kind
 
@@ -248,7 +243,7 @@ when isMainModule:
   # 1 <= SymId 0 < 6
   t.build info, Checked:
     t.addImmediateVal info, 0
-    t.addNone info # it not used for now
+    t.addCheckType info, Range
     t.build info, And:
       t.build info, Lt:
         t.addSymUse info, SymId 42

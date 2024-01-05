@@ -11,11 +11,19 @@ type
     Seq
     Array
     BitVec
+  
+  CheckType* = enum
+    Range
+    Index
+    Overflow
+    Assert
+    Refinement
 
   NodeKind* = enum
     None
     ImmediateVal
     Typed
+    CheckTypeVal
 
     ExternalSymUse
 
@@ -122,9 +130,16 @@ proc addImmediateVal*(t: var Tree; info: PackedLineInfo; x: int) =
   assert x >= 0 and x < ((1 shl 32) - OpcodeBits.int)
   t.nodes.add Node(x: toX(ImmediateVal, uint32(x)), info: info)
 
+proc addCheckType*(t: var Tree; info: PackedLineInfo; x: CheckType) =
+  t.nodes.add Node(x: toX(CheckTypeVal, cast[uint32](x)), info: info)
+
 proc immediateVal*(n: Node): int {.inline.} =
   assert n.kind == ImmediateVal
   result = cast[int](n.operand)
+
+proc checkTypeVal*(n: Node): CheckType =
+  assert n.kind == CheckTypeVal
+  cast[CheckType](n.operand)
 
 template `[]`*(t: Tree; n: NodePos): Node = t.nodes[n.int]
 
@@ -193,6 +208,9 @@ proc render*(t: Tree; n: NodePos; s: var string; nesting = 0) =
     s.add $(SymId t[n].operand)
   of Typed:
     s.add '<' & $cast[ValueType](t[n].operand) & '>'
+  of CheckTypeVal:
+    s.add "CheckTypeVal "
+    s.add $t[n].checkTypeVal
   else:
     s.add $t[n].kind
     s.add " {\n"
