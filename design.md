@@ -72,7 +72,6 @@ IR:
 ```nim
 a = Vector {
     Int64
-    Offset 1
     Scalar {Int64 1}
     Scalar {Int64 2}
 }
@@ -256,6 +255,24 @@ Coupled {
   SymUse b.z
 }
 ```
+
+Sum types
+=========
+In section below we can see how represented objects (product types) but we also need a sum types.
+nim:
+```nim
+type Test = enum
+  A
+  B
+
+var x = A
+```
+IR:
+```
+a = Scalar {<Test> 0}
+```
+And Test type defined in type system as SumType
+
 
 Future directions / The long run
 ================================

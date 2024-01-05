@@ -1,4 +1,4 @@
-import smtir
+import smtir, irtypes
 import Nim/compiler/nir/nirlineinfos
 import Nim/compiler/nir/nirinsts except Tree
 import std/tables
@@ -14,6 +14,7 @@ type
     facts: seq[Z3_ast]
     # strings*: BiTable[string]
     syms*: Table[SymId, Z3_ast]
+    types: TypeGraph
   
   Z3Exception = object of ValueError
 
@@ -39,11 +40,11 @@ template mk_var(name: string, ty: Z3_sort): Z3_ast =
   let sym = Z3_mk_string_symbol(c.z3, name)
   Z3_mk_const(c.z3, sym, ty)
 
-func getSort(c: var Z3Gen; typ: ValueType): Z3_sort =
-  case typ
-  of Int: Z3_mk_int_sort(c.z3)
-  of Rational: Z3_mk_real_sort(c.z3)
-  of Bool: Z3_mk_bool_sort(c.z3)
+func getSort(c: var Z3Gen; types: TypeGraph, t: TypeId): Z3_sort =
+  case types[t].kind
+  of IntTy: Z3_mk_int_sort(c.z3)
+  of RationalTy: Z3_mk_real_sort(c.z3)
+  of BoolTy: Z3_mk_bool_sort(c.z3)
   else: raiseAssert"unsupported"
 
 func genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
@@ -56,16 +57,16 @@ func genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
     c.syms[t[n].symId]
   of Scalar:
     let (typRaw, val) = sons2(t, n)
-    let typ = cast[ValueType](t[typRaw].operand)
-    let sort = c.getSort(typ)
+    let typ = cast[TypeId](t[typRaw].operand)
+    let sort = c.getSort(c.types, typ)
     if t[val].kind == None: mk_var("SCALAR", sort)
     else:
       assert t[val].kind == ImmediateVal
       let v = t[val].operand
 
-      case typ
-      of Int: Z3_mk_int64(c.z3, cast[clonglong](v), sort)
-      of Rational:
+      case c.types[typ].kind
+      of IntTy: Z3_mk_int64(c.z3, cast[clonglong](v), sort)
+      of RationalTy:
         # TODO: fix
         type Real = object
           num: cint
@@ -73,11 +74,11 @@ func genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
 
         let real = cast[Real](v)
         Z3_mk_real(c.z3, real.num, real.den)
-      of Bool:
+      of BoolTy:
         if v == 1: Z3_mk_true(c.z3)
         elif v == 0: Z3_mk_false(c.z3)
         else: raiseAssert "Bool must be 0 | 1"
-      of Float: Z3_mk_fpa_numeral_double(c.z3, cast[cdouble](v), sort)
+      of FloatTy: Z3_mk_fpa_numeral_double(c.z3, cast[cdouble](v), sort)
       else: raiseAssert "Invalid"
   of Add: binOp(Z3_mk_add, true)
   of Sub: binOp(Z3_mk_sub, true)
@@ -95,16 +96,22 @@ func genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
   of Conv:
     let (newTypRaw, oldTypRaw, sRaw) = sons3(t, n)
     let (newTyp, oldTyp, s) = (
-      cast[ValueType](t[newTypRaw].operand), 
-      cast[ValueType](t[oldTypRaw].operand),
+      t[newTypRaw].typeId, 
+      t[oldTypRaw].typeId,
       t[sRaw].symId
     )
 
     # where my pattern matching ?
-    if newTyp == BitVec and oldTyp == Int:
-      Z3_mk_int2bv(c.z3, cuint 32, c.syms[s])
-    elif newTyp == Int and oldTyp == BitVec:
+    if c.types[newTyp].kind == BitVecTy and c.types[oldTyp].kind in {IntTy, UintTy}:
+      Z3_mk_int2bv(c.z3, cuint(c.types[oldTyp].integralBits), c.syms[s])
+    elif c.types[newTyp].kind == IntTy and c.types[oldTyp].kind == BitVecTy:
       Z3_mk_bv2int(c.z3, c.syms[s], true)
+    elif c.types[newTyp].kind == UintTy and c.types[oldTyp].kind == BitVecTy:
+      Z3_mk_bv2int(c.z3, c.syms[s], false)
+    elif c.types[newTyp].kind in {IntTy, UintTy} and c.types[oldTyp].kind == BoolTy:
+      # if val: 1 else: 0
+      let sort = Z3_mk_int_sort(c.z3)
+      Z3_mk_ite(c.z3, c.syms[s], Z3_mk_int(c.z3, 1, sort), Z3_mk_int(c.z3, 0, sort))
     else:
       raiseAssert "Invalid conv"
   
@@ -226,7 +233,7 @@ when isMainModule:
   t.build info, SymAsgn:
     t.addSymUse info, SymId 0
     t.build info, Scalar:
-      t.addTyped info, Int
+      t.addTyped info, Int32Id
       t.addImmediateVal info, 1
       # t.addNone info
   
@@ -236,7 +243,7 @@ when isMainModule:
     t.build info, Add:
       t.addSymUse info, SymId 0
       t.build info, Scalar:
-        t.addTyped info, Int
+        t.addTyped info, Int32Id
         t.addImmediateVal info, 4
   
   # SymId 0 = 1 + 4
@@ -248,12 +255,12 @@ when isMainModule:
       t.build info, Lt:
         t.addSymUse info, SymId 42
         t.build info, Scalar:
-          t.addTyped info, Int
+          t.addTyped info, Int32Id
           t.addImmediateVal info, 6
       
       t.build info, Le:
         t.build info, Scalar:
-          t.addTyped info, Int
+          t.addTyped info, Int32Id
           t.addImmediateVal info, 1
         t.addSymUse info, SymId 42
   
@@ -261,8 +268,8 @@ when isMainModule:
     t.addSymUse info, SymId 43
 
     t.build info, Conv:
-      t.addTyped info, BitVec
-      t.addTyped info, Int
+      t.addTyped info, BitVecId
+      t.addTyped info, Int32Id
       t.addSymUse info, SymId 42
 
   var s = ""
@@ -275,6 +282,7 @@ when isMainModule:
   Z3_set_param_value(cfg, "well_sorted_check", "true")
   Z3_set_param_value(cfg, "trace", "true")
   var c = Z3Gen(z3: Z3_mk_context(cfg))
+  c.types = initTypeGraph(Literals())
   Z3_set_error_handler(c.z3, onErr)
 
   gen(c, t)

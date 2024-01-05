@@ -1,17 +1,5 @@
+import irtypes
 type
-  ValueType* = enum
-    Bool
-    Int
-    Float
-    Rational #Q
-
-    String
-    Set
-
-    Seq
-    Array
-    BitVec
-  
   CheckType* = enum
     Range
     Index
@@ -77,7 +65,6 @@ type
     info: PackedLineInfo # I don't know it will works or not ?
 
 const
-  LastVectorType {.used.} = Rational
   LastAtomicValue {.used.} = SymUse
   OpcodeBits = 8'u32
   OpcodeMask = (1'u32 shl OpcodeBits) - 1'u32
@@ -119,7 +106,7 @@ proc symId*(ins: Node): SymId {.inline.} =
   assert ins.kind == SymUse
   SymId(ins.operand)
 
-proc addTyped*(t: var Tree; info: PackedLineInfo; typ: ValueType) {.inline.} =
+proc addTyped*(t: var Tree; info: PackedLineInfo; typ: TypeId) {.inline.} =
   assert typ.int >= 0
   t.nodes.add Node(x: toX(Typed, cast[uint32](typ)), info: info)
 
@@ -140,6 +127,10 @@ proc immediateVal*(n: Node): int {.inline.} =
 proc checkTypeVal*(n: Node): CheckType =
   assert n.kind == CheckTypeVal
   cast[CheckType](n.operand)
+
+proc typeId*(n: Node): TypeId =
+  assert n.kind == Typed
+  cast[TypeId](n.operand)
 
 template `[]`*(t: Tree; n: NodePos): Node = t.nodes[n.int]
 
@@ -207,7 +198,7 @@ proc render*(t: Tree; n: NodePos; s: var string; nesting = 0) =
     s.add "SymUse "
     s.add $(SymId t[n].operand)
   of Typed:
-    s.add '<' & $cast[ValueType](t[n].operand) & '>'
+    s.add '<' & $t[n].operand & '>'
   of CheckTypeVal:
     s.add "CheckTypeVal "
     s.add $t[n].checkTypeVal
