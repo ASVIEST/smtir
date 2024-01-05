@@ -17,7 +17,7 @@ type
     SetTy
 
     SeqTy
-    ArrayTy
+    ArrayTy # Unchecked arrays
     BitVecTy
 
   TypeId* = distinct int

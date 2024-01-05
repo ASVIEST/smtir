@@ -11,7 +11,29 @@ SmtIR can handle refirement types via `StopPoint`
 
 General
 =======
-This IR uses SSA, so variable can have only one assigment
+This IR uses SSA, so variable can have only one assigment. It allows to add checks that creates new facts without future collision in SMT solver, for example
+```nim
+var a = 5
+assert a <= 7
+a += 3
+```
+IR:
+```nim
+a = Scalar {Int 5}
+Check {0 Assert a <= 7}
+a_2 = Add {a 5}
+```
+If a_2 is a:
+```nim
+a = 5
+assert a <= 7 # proven => fact a <= 7
+a += 3
+```
+when seeing that isSat we have that
+a = 8
+and fact: a <= 7
+=> unsat
+therefore it is necessary to use SSA.
 
 IR type system contains only primitive types without user defined. See objects section.
 
