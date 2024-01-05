@@ -94,24 +94,24 @@ func genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
   of BitNot: unaryOp(Z3_mk_bvnot)
 
   of Conv:
-    let (newTypRaw, oldTypRaw, sRaw) = sons3(t, n)
-    let (newTyp, oldTyp, s) = (
+    let (newTypRaw, oldTypRaw, valRaw) = sons3(t, n)
+    let (newTyp, oldTyp) = (
       t[newTypRaw].typeId, 
-      t[oldTypRaw].typeId,
-      t[sRaw].symId
+      t[oldTypRaw].typeId
     )
+    let val = c.genRValue(t, valRaw)
 
     # where my pattern matching ?
     if c.types[newTyp].kind == BitVecTy and c.types[oldTyp].kind in {IntTy, UintTy}:
-      Z3_mk_int2bv(c.z3, cuint(c.types[oldTyp].integralBits), c.syms[s])
+      Z3_mk_int2bv(c.z3, cuint(c.types[oldTyp].integralBits), val)
     elif c.types[newTyp].kind == IntTy and c.types[oldTyp].kind == BitVecTy:
-      Z3_mk_bv2int(c.z3, c.syms[s], true)
+      Z3_mk_bv2int(c.z3, val, true)
     elif c.types[newTyp].kind == UintTy and c.types[oldTyp].kind == BitVecTy:
-      Z3_mk_bv2int(c.z3, c.syms[s], false)
+      Z3_mk_bv2int(c.z3, val, false)
     elif c.types[newTyp].kind in {IntTy, UintTy} and c.types[oldTyp].kind == BoolTy:
       # if val: 1 else: 0
       let sort = Z3_mk_int_sort(c.z3)
-      Z3_mk_ite(c.z3, c.syms[s], Z3_mk_int(c.z3, 1, sort), Z3_mk_int(c.z3, 0, sort))
+      Z3_mk_ite(c.z3, val, Z3_mk_int(c.z3, 1, sort), Z3_mk_int(c.z3, 0, sort))
     else:
       raiseAssert "Invalid conv"
   
@@ -287,3 +287,4 @@ when isMainModule:
 
   gen(c, t)
   echo toString(c.z3, c.syms[SymId 42])
+  echo toString(c.z3, c.syms[SymId 43])
