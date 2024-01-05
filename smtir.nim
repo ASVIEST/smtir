@@ -1,4 +1,6 @@
 import irtypes
+import Nim/compiler/ic/bitabs
+
 type
   CheckType* = enum
     Range
@@ -10,6 +12,7 @@ type
   NodeKind* = enum
     None
     ImmediateVal
+    IntVal
     Typed
     CheckTypeVal
 
@@ -117,6 +120,9 @@ proc addImmediateVal*(t: var Tree; info: PackedLineInfo; x: int) =
   assert x >= 0 and x < ((1 shl 32) - OpcodeBits.int)
   t.nodes.add Node(x: toX(ImmediateVal, uint32(x)), info: info)
 
+proc addIntVal*(t: var Tree; integers: var BiTable[int64]; info: PackedLineInfo; x: int64) =
+  t.nodes.add Node(x: toX(IntVal, uint32(integers.getOrIncl(x))), info: info)
+
 proc addCheckType*(t: var Tree; info: PackedLineInfo; x: CheckType) =
   t.nodes.add Node(x: toX(CheckTypeVal, cast[uint32](x)), info: info)
 
@@ -131,6 +137,10 @@ proc checkTypeVal*(n: Node): CheckType =
 proc typeId*(n: Node): TypeId =
   assert n.kind == Typed
   cast[TypeId](n.operand)
+
+proc litId*(n: Node): LitId {.inline.} =
+  assert n.kind == IntVal
+  LitId n.operand
 
 template `[]`*(t: Tree; n: NodePos): Node = t.nodes[n.int]
 
@@ -189,11 +199,16 @@ proc rangeBounds*(t: Tree, n: NodePos): Slice[uint32] =
   let (le, ri) = sons2(t,n)
   t[le].operand .. t[ri].operand
 
-proc render*(t: Tree; n: NodePos; s: var string; nesting = 0) =
+proc render*(t: Tree; n: NodePos; s: var string; lit: Literals; nesting = 0) =
   for _ in 0..<nesting: s.add "  "
   case t[n].kind:
   of None: s.add "None"
-  of ImmediateVal: s.add $t[n].immediateVal
+  of ImmediateVal:
+    s.add "ImmediateVal "
+    s.add $t[n].immediateVal
+  of IntVal:
+    s.add "IntVal "
+    s.add $lit.numbers[t[n].litId]
   of SymUse:
     s.add "SymUse "
     s.add $(SymId t[n].operand)
@@ -206,15 +221,15 @@ proc render*(t: Tree; n: NodePos; s: var string; nesting = 0) =
     s.add $t[n].kind
     s.add " {\n"
     for i in sons(t, n):
-      render(t, i, s, nesting + 1)
+      render(t, i, s, lit, nesting + 1)
       s.add "\n"
     
     for i in 0..<nesting: s.add "  "
     s.add "}"
 
-proc render*(t: Tree; s: var string) =
+proc render*(t: Tree; s: var string; lit: Literals) =
   var i = 0
   while i < t.len:
-    render t, NodePos i, s
+    render t, NodePos i, s, lit
     s.add '\n'
     nextChild t, i

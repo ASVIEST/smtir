@@ -1,6 +1,8 @@
 import smtir, irtypes
 import Nim/compiler/nir/nirlineinfos
 import Nim/compiler/nir/nirinsts except Tree
+import Nim/compiler/ic/bitabs
+
 import std/tables
 {.experimental: "strictDefs".}
 {.experimental: "strictFuncs".}
@@ -15,6 +17,7 @@ type
     # strings*: BiTable[string]
     syms*: Table[SymId, Z3_ast]
     types: TypeGraph
+    lit: Literals
   
   Z3Exception = object of ValueError
 
@@ -47,7 +50,7 @@ func getSort(c: var Z3Gen; types: TypeGraph, t: TypeId): Z3_sort =
   of BoolTy: Z3_mk_bool_sort(c.z3)
   else: raiseAssert"unsupported"
 
-func genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
+proc genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
   case t[n].kind
   of Eq: binOp(Z3_mk_eq)
   of Le: binOp(Z3_mk_le)
@@ -61,8 +64,10 @@ func genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
     let sort = c.getSort(c.types, typ)
     if t[val].kind == None: mk_var("SCALAR", sort)
     else:
-      assert t[val].kind == ImmediateVal
-      let v = t[val].operand
+      assert t[val].kind in {NodeKind.ImmediateVal, IntVal}
+      let v =
+        if t[val].kind == ImmediateVal: cast[int64](t[val].operand)
+        else: c.lit.numbers[t[val].litId]
 
       case c.types[typ].kind
       of IntTy: Z3_mk_int64(c.z3, cast[clonglong](v), sort)
@@ -229,12 +234,13 @@ proc onErr(ctx: Z3_context, e: Z3_error_code) {.nimcall.} =
 when isMainModule:
   var t = Tree()
   let info = PackedLineInfo.default
+  var lit = Literals()
 
   t.build info, SymAsgn:
     t.addSymUse info, SymId 0
     t.build info, Scalar:
       t.addTyped info, Int32Id
-      t.addImmediateVal info, 1
+      t.addIntVal lit.numbers, info, 1
       # t.addNone info
   
   t.build info, SymAsgn:
@@ -244,7 +250,7 @@ when isMainModule:
       t.addSymUse info, SymId 0
       t.build info, Scalar:
         t.addTyped info, Int32Id
-        t.addImmediateVal info, 4
+        t.addIntVal lit.numbers, info, 4
   
   # SymId 0 = 1 + 4
   # 1 <= SymId 0 < 6
@@ -256,12 +262,12 @@ when isMainModule:
         t.addSymUse info, SymId 42
         t.build info, Scalar:
           t.addTyped info, Int32Id
-          t.addImmediateVal info, 6
+          t.addIntVal lit.numbers, info, 6
       
       t.build info, Le:
         t.build info, Scalar:
           t.addTyped info, Int32Id
-          t.addImmediateVal info, 1
+          t.addIntVal lit.numbers, info, 1
         t.addSymUse info, SymId 42
   
   t.build info, SymAsgn:
@@ -273,7 +279,7 @@ when isMainModule:
       t.addSymUse info, SymId 42
 
   var s = ""
-  render(t, s)
+  render(t, s, lit)
   echo s
 
   let cfg = Z3_mk_config()
@@ -281,7 +287,7 @@ when isMainModule:
   
   Z3_set_param_value(cfg, "well_sorted_check", "true")
   Z3_set_param_value(cfg, "trace", "true")
-  var c = Z3Gen(z3: Z3_mk_context(cfg))
+  var c = Z3Gen(z3: Z3_mk_context(cfg), lit: lit)
   c.types = initTypeGraph(Literals())
   Z3_set_error_handler(c.z3, onErr)
 

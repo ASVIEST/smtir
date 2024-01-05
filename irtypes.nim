@@ -1,6 +1,7 @@
 # simple type system, heavily inspired by nirtypes
 # yes, type graph can be modified but usually this is not need,
 # because sum types is not yet supported
+import Nim/compiler/ic/bitabs
 
 type
   TypeKind* = enum
@@ -65,7 +66,7 @@ type
   
   Literals* = ref object # it only need for when we get the sum types
     # strings*: BiTable[string]
-    # numbers*: BiTable[int64]
+    numbers*: BiTable[int64]
 
 proc initTypeGraph*(lit: Literals): TypeGraph =
   result = TypeGraph(nodes: @[
