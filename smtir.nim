@@ -1,5 +1,6 @@
 import irtypes
 import Nim/compiler/ic/bitabs
+import packed_syms
 
 type
   CheckType* = enum
@@ -102,12 +103,12 @@ template build*(tree: var Tree; info: PackedLineInfo; kind: NodeKind; body: unty
   body
   patch(tree, pos)
 
-proc addSymUse*(t: var Tree; info: PackedLineInfo; s: SymId) {.inline.} =
+proc addSymUse*(t: var Tree; info: PackedLineInfo; s: PackedSymId) {.inline.} =
   t.nodes.add Node(x: toX(SymUse, uint32(s)), info: info)
 
-proc symId*(ins: Node): SymId {.inline.} =
+proc symId*(ins: Node): PackedSymId {.inline.} =
   assert ins.kind == SymUse
-  SymId(ins.operand)
+  PackedSymId(ins.operand)
 
 proc addTyped*(t: var Tree; info: PackedLineInfo; typ: TypeId) {.inline.} =
   assert typ.int >= 0
@@ -211,7 +212,7 @@ proc render*(t: Tree; n: NodePos; s: var string; lit: Literals; nesting = 0) =
     s.add $lit.numbers[t[n].litId]
   of SymUse:
     s.add "SymUse "
-    s.add $(SymId t[n].operand)
+    s.add $(PackedSymId t[n].operand)
   of Typed:
     s.add '<' & $t[n].operand & '>'
   of CheckTypeVal:

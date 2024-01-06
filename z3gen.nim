@@ -1,9 +1,10 @@
 import smtir, irtypes
 import Nim/compiler/nir/nirlineinfos
-import Nim/compiler/nir/nirinsts except Tree
+import Nim/compiler/nir/nirinsts except Tree # need PackedSymId and NodePos
 import Nim/compiler/ic/bitabs
 
 import std/tables
+import packed_syms
 {.experimental: "strictDefs".}
 {.experimental: "strictFuncs".}
 
@@ -15,7 +16,7 @@ type
 
     facts: seq[Z3_ast]
     # strings*: BiTable[string]
-    syms*: Table[SymId, Z3_ast]
+    syms*: Table[PackedSymId, Z3_ast]
     types: TypeGraph
     lit: Literals
   
@@ -237,17 +238,17 @@ when isMainModule:
   var lit = Literals()
 
   t.build info, SymAsgn:
-    t.addSymUse info, SymId 0
+    t.addSymUse info, PackedSymId 0
     t.build info, Scalar:
       t.addTyped info, Int32Id
       t.addIntVal lit.numbers, info, 1
       # t.addNone info
   
   t.build info, SymAsgn:
-    t.addSymUse info, SymId 42 # SymId 42 is result
+    t.addSymUse info, PackedSymId 42 # SymId 42 is result
 
     t.build info, Add:
-      t.addSymUse info, SymId 0
+      t.addSymUse info, PackedSymId 0
       t.build info, Scalar:
         t.addTyped info, Int32Id
         t.addIntVal lit.numbers, info, 4
@@ -259,7 +260,7 @@ when isMainModule:
     t.addCheckType info, Range
     t.build info, And:
       t.build info, Lt:
-        t.addSymUse info, SymId 42
+        t.addSymUse info, PackedSymId 42
         t.build info, Scalar:
           t.addTyped info, Int32Id
           t.addIntVal lit.numbers, info, 6
@@ -268,15 +269,15 @@ when isMainModule:
         t.build info, Scalar:
           t.addTyped info, Int32Id
           t.addIntVal lit.numbers, info, 1
-        t.addSymUse info, SymId 42
+        t.addSymUse info, PackedSymId 42
   
   t.build info, SymAsgn:
-    t.addSymUse info, SymId 43
+    t.addSymUse info, PackedSymId 43
 
     t.build info, Conv:
       t.addTyped info, BitVecId
       t.addTyped info, Int32Id
-      t.addSymUse info, SymId 42
+      t.addSymUse info, PackedSymId 42
 
   var s = ""
   render(t, s, lit)
@@ -292,5 +293,5 @@ when isMainModule:
   Z3_set_error_handler(c.z3, onErr)
 
   gen(c, t)
-  echo toString(c.z3, c.syms[SymId 42])
-  echo toString(c.z3, c.syms[SymId 43])
+  echo toString(c.z3, c.syms[PackedSymId 42])
+  echo toString(c.z3, c.syms[PackedSymId 43])
