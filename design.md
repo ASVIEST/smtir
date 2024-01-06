@@ -20,7 +20,7 @@ a += 3
 IR:
 ```nim
 a = Scalar {Int 5}
-Check {0 Assert a <= 7}
+Checked {0 Assert a <= 7}
 a_2 = Add {a 5}
 ```
 If a_2 is a:
@@ -130,7 +130,7 @@ var x: range[1..6] = 3
 IR:
 ```nim
 x = Scalar {Int64 3}
-Check {
+Checked {
   0 # is fact or not
   Range
   Constraint x >= 1
@@ -295,6 +295,169 @@ a = Scalar {<Test> 0}
 ```
 And Test type defined in type system as SumType
 
+Control flow
+============
+P.S. Next to implement
+
+It very similar to DrNim Phi nodes, as in DrNim, 
+here expressions are used instead of blocks.
+(There's no point in complicating this if by default the node just exists anyway.)
+
+
+Nim:
+```nim
+var x = y
+if a:
+  inc x
+elif b:
+  inc x, 2
+```
+IR:
+```nim
+x_0 = y
+
+x_1 = x_0 + 1
+x_2 = x_0 + 2
+
+Checked {
+  # checks is need in all branches, not only on Phi node
+  # controversial decision, but even on a branch that will never execute, 
+  # allowing bad code is not a good idea
+  0
+  Overflow
+  x_1 <= 2^32
+}
+
+Checked {
+  0
+  Overflow
+  x_2 <= 2^32
+}
+
+Phi {
+  SymUse x_3
+
+  Det { # Det node can show the branch that need to select
+    a # det, if true ---> select branch. if one true then other --> false. 
+      # this value must be pinpoint the branch
+    x_1
+  }
+  Det {
+    b and not a
+    x_2
+  }
+  Det {
+    not(a or (b and not a)) # Note other must be not of other det
+    x_0
+  }
+}
+```
+For loops it uses an Loop Closed SSA (LCSSA).
+It means that all values that are defined in a loop are used only inside this loop.
+Nim:
+```nim
+var y = 4
+for i in 0..<5:
+  y = 7
+```
+IR:
+```nim
+y_0 = 4
+
+# Loop body start
+y_1 = 7 # it can be, or it can not be, we a don't know and it doesn't matter to us
+
+# Loop body end
+
+# Invariant i:
+i = Scalar {
+  Int
+  None # we don't know i val
+}
+
+i_min = 0
+i_max = 4
+
+Checked {
+  0
+  Range
+  i >= i_min
+  i <= i_max
+}
+
+y_2 = Phi {
+  SymUse i # param
+
+  Det {
+    i < i_min
+    y_0
+  }
+  Det {
+    i >= i_min
+    y_1
+  }
+}
+```
+
+Phi logic can better explained here
+Nim:
+```nim
+var y = 4
+for i in 0..<5:
+  y *= 2
+```
+IR:
+```nim
+y_0 = 4
+
+i = Scalar {
+  Int
+  None
+}
+
+i_min = 0
+i_max = 4
+
+Checked {
+  0
+  Range
+  i >= i_min
+  i <= i_max
+}
+
+# on fact it's recursive function that describe the Phi hierarhy
+# it's alternative to basic blocks
+# Phi in LLVM means that if you are from selected block then selected branch
+# Phi in SMTIR means that if predicate true then selected branch.
+# Because of this to allow not linear graphs we make Phi parametric
+
+y_1 = Phi {
+  SymUse i
+
+  Det {
+    i < i_min
+    y_0
+  }
+  Det {
+    i != 0
+    ResolvedPhi {
+      SymUse y_1
+      i - 1
+    } * 2
+  }
+} # it is unknown what 
+  # the consequences of using this instead of basic blocks will be
+  # Fun fact: if we think of this as a recursive function, 
+  # the SMT solver will be able to find an i 
+  # that will give the desired value for y
+  # this representation also very simple can determine the arith (and geom) 
+  # progression and replace it by formulas
+
+y_2 = ResolvedPhi {
+  y
+  i_max # parameters to resolve
+}
+```
 
 Future directions / The long run
 ================================
