@@ -459,6 +459,96 @@ y_2 = ResolvedPhi {
 }
 ```
 
+Simplifier
+==========
+NOTE: Very hard to implement but necessary
+
+Progressions in loop
+Nim:
+```
+var y = 6
+for i in 0..1:
+  y *= 2 # y = y * 2
+```
+Ir:
+```nim
+y_1 = Phi {
+  SymUse i
+
+  Det {
+    i < i_min
+    y_0
+  }
+  Det {
+    i >= i_min
+    ResolvedPhi {
+      SymUse y_1
+      i - 1
+    } * 2
+  }
+}
+```
+Pseudo: phi(i) = phi(i - 1) * 2
+It means that it is nth term of geom progression.
+so
+```
+y_1 = Phi {
+  SymUse i
+
+  Det {
+    i < i_min
+    y_0
+  }
+  Det {
+    i >= i_min
+    y_0 * 2^(i - i_min + 1 - 1)
+  }
+}
+y_2 = ResolvedPhi {
+  SymUse y_1
+  i_max
+}
+```
+
+Nim:
+```
+var y = 6
+for i in 0..1:
+  y += y * 2 # y = y + y * 2
+```
+Ir:
+```nim
+y_1 = Phi {
+  SymUse i
+
+  Det {
+    i < i_min
+    y_0
+  }
+  Det {
+    i != 0
+    Add {
+      ResolvedPhi {
+        SymUse y_1
+        i - 1
+      }
+      Mul {
+        ResolvedPhi {
+          SymUse y_1
+          i - 1
+        }
+        Scalar {Int 2}
+      }
+    }
+  }
+}
+```
+Pseudo: phi(i) = phi(i - 1) + phi(i - 1) * 2
+Expr phi(i) = phi(i - 1) + sth ---> sth is sum i_max - i_min times.
+sth = phi(i - 1) * 2 same as old example it's means that it is nth term of geom progression
+Expr phi(i) = phi(i - 1) + nth_term(geom) => sum of geom progression
+
+
 Future directions / The long run
 ================================
 
