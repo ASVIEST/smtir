@@ -335,6 +335,7 @@ Checked {
 }
 
 Phi {
+  <Int>
   SymUse x_3
 
   Det { # Det node can show the branch that need to select
@@ -386,6 +387,7 @@ Checked {
 }
 
 y_2 = Phi {
+  <Int>
   SymUse i # param
 
   Det {
@@ -432,6 +434,7 @@ Checked {
 # Because of this to allow not linear graphs we make Phi parametric
 
 y_1 = Phi {
+  <Int>
   SymUse i
 
   Det {
@@ -473,6 +476,7 @@ for i in 0..1:
 Ir:
 ```nim
 y_1 = Phi {
+  <Int>
   SymUse i
 
   Det {
@@ -491,8 +495,9 @@ y_1 = Phi {
 Pseudo: phi(i) = phi(i - 1) * 2
 It means that it is nth term of geom progression.
 so
-```
+```nim
 y_1 = Phi {
+  <Int>
   SymUse i
 
   Det {
@@ -511,7 +516,7 @@ y_2 = ResolvedPhi {
 ```
 
 Nim:
-```
+```nim
 var y = 6
 for i in 0..1:
   y += y * 2 # y = y + y * 2
@@ -519,6 +524,7 @@ for i in 0..1:
 Ir:
 ```nim
 y_1 = Phi {
+  <Int>
   SymUse i
 
   Det {

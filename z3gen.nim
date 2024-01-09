@@ -7,6 +7,7 @@ import std/tables
 import packed_syms
 {.experimental: "strictDefs".}
 {.experimental: "strictFuncs".}
+# TODO: {.experimental: "strictNotNil".}
 
 import z3/z3_api
 type
@@ -53,6 +54,7 @@ func getSort(c: var Z3Gen; types: TypeGraph, t: TypeId): Z3_sort =
 
 proc genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
   case t[n].kind
+  of Not: unaryOp(Z3_mk_not)
   of Eq: binOp(Z3_mk_eq)
   of Le: binOp(Z3_mk_le)
   of Lt: binOp(Z3_mk_lt)
@@ -129,8 +131,47 @@ proc genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
   of Concat:
     let (le, ri) = sons2(t, n)
     Z3_mk_concat(c.z3, c.genRValue(t, le), c.genRValue(t, ri))
+  
+  of Phi:
+    # we could not analyze these Phi nodes for some patterns. 
+    # Therefore, the SMT solver has to infer the Phi nodes by itself.
 
+    # Generated ast is just if calls
+    # for example:
+    # y_2 = Phi {
+    #   <Int>
+    #   SymUse i # param
+
+    #   Det {
+    #     i < i_min
+    #     y_0
+    #   }
+    #   Det {
+    #     i >= i_min
+    #     y_1
+    #   }
+    # }
+    # -->
+    # y_3 = const
+    # If(i < i_min, y_3 == y_0, y_3 == y_1)
+    # -> y_3
+
+    let typ = cast[TypeId](t[n.firstSon].operand)
+    var node = mk_var("PHI", c.getSort(c.types, typ))
+    var condTree = Z3_mk_false(c.z3)
+    for ch in sons(t, n):
+      if t[ch].kind == Det:
+        let (cond, val) = sons2(t, ch)
+        condTree = Z3_mk_ite(
+          c.z3,
+          c.genRValue(t, cond),
+          Z3_mk_eq(c.z3, node, c.genRValue(t, val)), # y_3 == y_0
+          condTree
+        )
+    c.facts.add condTree
+    node
   else:
+    echo t[n].kind
     raiseAssert "never"
 
 
@@ -237,46 +278,109 @@ when isMainModule:
   let info = PackedLineInfo.default
   var lit = Literals()
 
+  # t.build info, SymAsgn:
+  #   t.addSymUse info, PackedSymId 0
+  #   t.build info, Scalar:
+  #     t.addTyped info, Int32Id
+  #     t.addIntVal lit.numbers, info, 1
+  #     # t.addNone info
+  
+  # t.build info, SymAsgn:
+  #   t.addSymUse info, PackedSymId 42 # SymId 42 is result
+
+  #   t.build info, Add:
+  #     t.addSymUse info, PackedSymId 0
+  #     t.build info, Scalar:
+  #       t.addTyped info, Int32Id
+  #       t.addIntVal lit.numbers, info, 4
+  
+  # # SymId 0 = 1 + 4
+  # # 1 <= SymId 0 < 6
+  # t.build info, Checked:
+  #   t.addImmediateVal info, 0
+  #   t.addCheckType info, Range
+  #   t.build info, And:
+  #     t.build info, Lt:
+  #       t.addSymUse info, PackedSymId 42
+  #       t.build info, Scalar:
+  #         t.addTyped info, Int32Id
+  #         t.addIntVal lit.numbers, info, 6
+      
+  #     t.build info, Le:
+  #       t.build info, Scalar:
+  #         t.addTyped info, Int32Id
+  #         t.addIntVal lit.numbers, info, 1
+  #       t.addSymUse info, PackedSymId 42
+  
+  # t.build info, SymAsgn:
+  #   t.addSymUse info, PackedSymId 43
+
+  #   t.build info, Conv:
+  #     t.addTyped info, BitVecId
+  #     t.addTyped info, Int32Id
+  #     t.addSymUse info, PackedSymId 42
+  
+  # Test Phi
   t.build info, SymAsgn:
     t.addSymUse info, PackedSymId 0
     t.build info, Scalar:
       t.addTyped info, Int32Id
-      t.addIntVal lit.numbers, info, 1
       # t.addNone info
+      t.addIntVal lit.numbers, info, 0
   
   t.build info, SymAsgn:
-    t.addSymUse info, PackedSymId 42 # SymId 42 is result
-
+    t.addSymUse info, PackedSymId 99_0 # a
+    t.build info, Scalar:
+      t.addTyped info, Bool8Id
+      t.addIntVal lit.numbers, info, 1
+  
+  t.build info, SymAsgn:
+    t.addSymUse info, PackedSymId 99_1 # b
+    t.build info, Scalar:
+      t.addTyped info, Bool8Id
+      t.addIntVal lit.numbers, info, 1
+  
+  t.build info, SymAsgn:
+    t.addSymUse info, PackedSymId 1
     t.build info, Add:
       t.addSymUse info, PackedSymId 0
       t.build info, Scalar:
         t.addTyped info, Int32Id
-        t.addIntVal lit.numbers, info, 4
+        t.addIntVal lit.numbers, info, 1
   
-  # SymId 0 = 1 + 4
-  # 1 <= SymId 0 < 6
+  t.build info, SymAsgn:
+    t.addSymUse info, PackedSymId 2
+    t.build info, Add:
+      t.addSymUse info, PackedSymId 0
+      t.build info, Scalar:
+        t.addTyped info, Int32Id
+        t.addIntVal lit.numbers, info, 2
+  
+  t.build info, SymAsgn:
+    t.addSymUse info, PackedSymId 42
+    t.build info, Phi:
+      t.addTyped info, Int32Id
+      t.addSymUse info, PackedSymId 0
+      t.build info, Det:
+        t.addSymUse info, PackedSymId 99_0
+
+        t.addSymUse info, PackedSymId 1
+      
+      t.build info, Det:
+        t.build info, And:
+          t.addSymUse info, PackedSymId 99_1
+          t.build info, Not:
+            t.addSymUse info, PackedSymId 99_0
+
+        t.addSymUse info, PackedSymId 2
+  
   t.build info, Checked:
     t.addImmediateVal info, 0
     t.addCheckType info, Range
-    t.build info, And:
-      t.build info, Lt:
-        t.addSymUse info, PackedSymId 42
-        t.build info, Scalar:
-          t.addTyped info, Int32Id
-          t.addIntVal lit.numbers, info, 6
-      
-      t.build info, Le:
-        t.build info, Scalar:
-          t.addTyped info, Int32Id
-          t.addIntVal lit.numbers, info, 1
-        t.addSymUse info, PackedSymId 42
-  
-  t.build info, SymAsgn:
-    t.addSymUse info, PackedSymId 43
-
-    t.build info, Conv:
-      t.addTyped info, BitVecId
-      t.addTyped info, Int32Id
+    t.build info, Lt:
+      t.build info, Scalar:
+        t.addTyped info, Int32Id
+        t.addIntVal lit.numbers, info, 1
       t.addSymUse info, PackedSymId 42
 
   var s = ""
@@ -288,10 +392,12 @@ when isMainModule:
   
   Z3_set_param_value(cfg, "well_sorted_check", "true")
   Z3_set_param_value(cfg, "trace", "true")
+  
   var c = Z3Gen(z3: Z3_mk_context(cfg), lit: lit)
   c.types = initTypeGraph(Literals())
   Z3_set_error_handler(c.z3, onErr)
+  Z3_set_ast_print_mode(c.z3, Z3_PRINT_SMTLIB_COMPLIANT)
 
   gen(c, t)
-  echo toString(c.z3, c.syms[PackedSymId 42])
-  echo toString(c.z3, c.syms[PackedSymId 43])
+  # echo toString(c.z3, c.syms[PackedSymId 42])
+  # echo toString(c.z3, c.syms[PackedSymId 43])
