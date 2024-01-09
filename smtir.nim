@@ -40,6 +40,9 @@ type
     Lt
 
     Checked # {ImmediateVal #[isFact]#, CheckType, Constraint+}
+    Phi # {Typed, (SymUse | Det)*}
+    Det # {And | Or | Not | SymUse #[Cond]#, SymUse}
+    ResolvedPhi # {SymUse, SymUse* #[Params]#}
 
     # SAT theory
     And
