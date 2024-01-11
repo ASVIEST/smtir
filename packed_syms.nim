@@ -20,7 +20,7 @@ import std/math
 from Nim/compiler/nir/nirinsts import SymId
 proc toPacked*(s: SymId; count: uint16): PackedSymId =
   assert s.uint32 <= static(2'u32^16)
-  PackedSymId s.uint16 shl 16 or count
+  PackedSymId (s.uint32 shl 16) or count
 
 proc nirSymId*(s: PackedSymId): SymId =
   SymId s.uint64 shr 16
