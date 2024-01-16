@@ -148,8 +148,19 @@ proc litId*(n: Node): LitId {.inline.} =
 
 template `[]`*(t: Tree; n: NodePos): Node = t.nodes[n.int]
 
-
 template rawSpan(n: Node): int = int(operand(n))
+proc span(tree: Tree; pos: int): int {.inline.} =
+  if tree.nodes[pos].kind <= LastAtomicValue: 1 else: int(tree.nodes[pos].operand)
+
+proc copyTree*(dest: var Tree; src: Tree) =
+  let pos = 0
+  let L = span(src, pos)
+  let d = dest.nodes.len
+  dest.nodes.setLen(d + L)
+  assert L > 0
+  for i in 0..<L:
+    dest.nodes[d+i] = src.nodes[pos+i]
+
 proc len*(tree: Tree): int {.inline.} = tree.nodes.len
 
 proc nextChild(tree: Tree; pos: var int) {.inline.} =
@@ -171,9 +182,6 @@ iterator sons*(tree: Tree; n: NodePos): NodePos =
     nextChild tree, pos
 
 proc isAtom(tree: Tree; pos: NodePos): bool {.inline.} = tree.nodes[pos.int].kind <= LastAtomicValue
-
-proc span(tree: Tree; pos: int): int {.inline.} =
-  if tree.nodes[pos].kind <= LastAtomicValue: 1 else: int(tree.nodes[pos].operand)
 
 proc sons2*(tree: Tree; n: NodePos): (NodePos, NodePos) {.inline.} =
   assert(not isAtom(tree, n))

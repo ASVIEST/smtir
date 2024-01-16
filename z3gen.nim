@@ -12,14 +12,14 @@ import packed_syms
 import z3/z3_api
 type
   Z3Gen = object
-    z3: Z3_context
+    z3*: Z3_context
     ast: Z3_ast
 
     facts: seq[Z3_ast]
     # strings*: BiTable[string]
     syms*: Table[PackedSymId, Z3_ast]
-    types: TypeGraph
-    lit: Literals
+    types*: TypeGraph
+    lit*: Literals
   
   Z3Exception = object of ValueError
 
@@ -47,10 +47,12 @@ template mk_var(name: string, ty: Z3_sort): Z3_ast =
 
 func getSort(c: var Z3Gen; types: TypeGraph, t: TypeId): Z3_sort =
   case types[t].kind
-  of IntTy: Z3_mk_int_sort(c.z3)
+  of IntTy, UintTy: Z3_mk_int_sort(c.z3)
   of RationalTy: Z3_mk_real_sort(c.z3)
   of BoolTy: Z3_mk_bool_sort(c.z3)
-  else: raiseAssert"unsupported"
+  else: 
+    debugEcho types[t].kind
+    raiseAssert"unsupported"
 
 proc genRValue(c: var Z3Gen; t: Tree, n: NodePos): Z3_ast =
   case t[n].kind
