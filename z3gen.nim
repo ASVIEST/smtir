@@ -228,7 +228,7 @@ proc prove(
   of Z3_L_FALSE: UnProved
   of Z3_L_UNDEF: Unknown
 
-import strutils
+import std/strutils
 proc genLValue(c: var Z3Gen; t: Tree; n: NodePos) =
   case t[n].kind
   of SymAsgn:

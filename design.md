@@ -352,6 +352,10 @@ Phi {
     x_0
   }
 }
+# Generated SMT pseudo:
+cond0 and (x_3 == x_1) or 
+cond1 and (x_3 == x_2) or
+cond2 and (x_3 == x_0)
 ```
 For loops it uses an Loop Closed SSA (LCSSA).
 It means that all values that are defined in a loop are used only inside this loop.
