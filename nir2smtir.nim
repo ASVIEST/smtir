@@ -335,7 +335,6 @@ proc gen(c: var GeneratorCtx, t: nirinsts.Tree, n: NodePos) =
     c.currentDet = nextBlock
 
   of Label:
-    discard "skip label"
     let lab = t[n].label
     c.currentLabel = lab
     if lab notin c.ways:
