@@ -208,15 +208,20 @@ proc buildEquals(
       gen(c, tree, selector)
       gen(c, tree, values)
   of SelectList:
-    var val = default(smtir.Tree)
-    for ch in sons(tree, values):
-      overrideTree c, val:
-        if val.len > 0:
-          c.tree.build info, Or:
-            copyTree(c.tree, val)
-            buildEquals(c, tree, info, selector, ch)
-        else:
-          c.tree = val
+    if rawOperand(tree[values]) > 1: # len
+      var val = default(smtir.Tree)
+      withTree c, val:
+        for ch in sons(tree, values):
+          buildEquals(c, tree, info, selector, ch)
+      val = buildNestList(Or, info, val)
+      when true:
+        var s = ""
+        render(val, s, c.lit)
+        echo "RENDERED:  ", s
+      copyTree(c.tree, val)
+    else:
+      # else branch
+      discard
   else:
     raiseAssert "Unsupported"
 
@@ -297,41 +302,36 @@ proc gen(c: var GeneratorCtx, t: nirinsts.Tree, n: NodePos) =
     for ch in sonsFromN(t, n, 2):
       assert t[ch].kind == SelectPair
       let (values, action) = sons2(t, ch)
-      var tree = smtir.Tree()
-      withTree c, tree:
-        buildEquals(c, t, info, selector, values)
+      var cond = smtir.Tree()
+      withTree c, cond: buildEquals(c, t, info, selector, values)
+      if cond.len == 0: continue # skip else branch in case because we will get it in control flow
+      conds.add cond
       overrideTree c, c.currentDet:
         if c.currentDet.len > 0:
           c.tree.build info, And:
-            copyTree(c.tree, tree)
+            copyTree(c.tree, cond)
             copyTree(c.tree, c.currentDet)
         else:
-          c.tree = tree
-        
+          c.tree = cond
       gen(c, t, action)
-      conds.add tree
-
+      
     var nextBlock = default(smtir.Tree)
-    for i in conds:
-      overrideTree c, nextBlock:
-        if nextBlock.len > 0:
-          c.tree.build info, Or:
-            copyTree(c.tree, nextBlock)
-            copyTree(c.tree, i)
+    template binOpIf(cond, t, opc, body): untyped =
+      overrideTree c, t:
+        if cond:
+          t.build info, opc:
+            copyTree(c.tree, t)
+            body
         else:
-          c.tree = i
+          c.tree = t
 
-    overrideTree c, nextBlock:
-      c.tree.build info, Not:
-        copyTree(c.tree, nextBlock)
-
-    overrideTree c, nextBlock:
-      if det.len > 0:
-        c.tree.build info, And:
-          copyTree(c.tree, nextBlock)
-          copyTree(c.tree, det)
-      else:
-        c.tree = nextBlock
+    nextBlock.build info, Not:
+      copyTree(nextBlock, buildNestList(Or, info, conds))
+    
+    binOpIf(
+      det.len > 0, 
+      nextBlock, And, copyTree(c.tree, det))
+    
     c.currentDet = nextBlock
 
   of Label:

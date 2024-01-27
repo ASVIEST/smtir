@@ -149,7 +149,7 @@ proc litId*(n: Node): LitId {.inline.} =
 template `[]`*(t: Tree; n: NodePos): Node = t.nodes[n.int]
 
 template rawSpan(n: Node): int = int(operand(n))
-proc span(tree: Tree; pos: int): int {.inline.} =
+proc span*(tree: Tree; pos: int): int {.inline.} =
   if tree.nodes[pos].kind <= LastAtomicValue: 1 else: int(tree.nodes[pos].operand)
 
 proc copyTree*(dest: var Tree; src: Tree) =
@@ -206,6 +206,43 @@ iterator sonsFromN*(tree: Tree; n: NodePos; toSkip = 2): NodePos =
   while pos < last:
     yield NodePos pos
     nextChild tree, pos
+
+proc copySon(dst: var Tree, src: Tree, n: NodePos) =
+  let a = n.int
+  let b = a + span(src, a) - 1
+  for i in a..b: dst.nodes.add src.nodes[i]
+
+proc buildNestList*(op: NodeKind, info: PackedLineInfo, tree: Tree; n: NodePos): Tree =
+  # Node sons --> son1 op son2 op son3 op son4 etc.
+  copySon(result, tree, n.firstSon)
+  for ch in sonsFromN(tree, n, 1):
+    var tmp = Tree()
+    tmp.build info, op:
+      copyTree(tmp, result)
+      copySon(tmp, tree, ch)
+    result = tmp
+
+
+proc buildNestList*(op: NodeKind, info: PackedLineInfo, tree: Tree): Tree =
+  # node`1`, node`2` -> node`1` op node`2`
+  copySon(result, tree, NodePos 0)
+  var i = span(tree, 0)
+  while i < tree.len:
+    var tmp = Tree()
+    tmp.build info, op:
+      copyTree(tmp, result)
+      copySon(tmp, tree, NodePos i)
+    result = tmp
+    nextChild tree, i
+
+proc buildNestList*(op: NodeKind, info: PackedLineInfo, trees: seq[Tree]): Tree =
+  copyTree(result, trees[0])
+  for i in 1..<trees.len:
+    var tmp = Tree()
+    tmp.build info, op:
+      copyTree(tmp, result)
+      copyTree(tmp, trees[i])
+    result = tmp
 
 proc rangeBounds*(t: Tree, n: NodePos): Slice[uint32] =
   let (le, ri) = sons2(t,n)
