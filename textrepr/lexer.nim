@@ -180,7 +180,8 @@ proc getTok*(L: var Lexer, tok: var Token) =
   of '0':
     if L.buf[L.bufpos + 1] in '1'..'9':
       raiseAssert "Leading zero..."
-    # else:
+    else:
+      tok.s = "0"
 
   of '1'..'9': getNumber(L, tok)
   of '=', '<', '>': getPunctuator(L, tok)
@@ -215,4 +216,5 @@ when isMainModule:
   """)
   L.open(strm)
   for i in tokenize(L):
-    echo i
+    if i.kind != TokenKind(0):
+      echo i
