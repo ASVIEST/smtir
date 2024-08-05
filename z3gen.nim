@@ -232,7 +232,7 @@ import std/strutils
 proc genLValue(c: var Z3Gen; t: Tree; n: NodePos) =
   case t[n].kind
   of SymAsgn:
-    let (le, ri) = sons2(t, n)
+    let (le, _, ri) = sons3(t, n)
     c.syms[t[le].symId] = c.genRValue(t, ri)
 
   of Checked:
@@ -258,9 +258,9 @@ proc genLValue(c: var Z3Gen; t: Tree; n: NodePos) =
           $Z3_model_to_string(c.z3, Z3_solver_get_model(c.z3, solver))
         )
         if counterex.len > 0:
-          raise newException(Z3Exception, $t[typ].checkTypeVal & " check falid. counter example:  " & counterex)
+          raise newException(Z3Exception, $t[typ].checkType & " check falid. counter example:  " & counterex)
         else:
-          raise newException(Z3Exception, $t[typ].checkTypeVal & " check failed")
+          raise newException(Z3Exception, $t[typ].checkType & " check failed")
       else: c.facts.add constraints
   else:
     raiseAssert "Invalid lvalue: " & $t[n].kind
@@ -276,117 +276,31 @@ proc onErr(ctx: Z3_context, e: Z3_error_code) {.nimcall.} =
   raise newException(Z3Exception, msg)
 
 when isMainModule:
-  var t = Tree()
-  let info = PackedLineInfo.default
-  var lit = Literals()
+  import textrepr/[parser, lexer]
+  import std/[streams, lexbase]
+  var p = Parser()
+  var L = Lexer()
 
-  # t.build info, SymAsgn:
-  #   t.addSymUse info, PackedSymId 0
-  #   t.build info, Scalar:
-  #     t.addTyped info, Int32Id
-  #     t.addIntVal lit.numbers, info, 1
-  #     # t.addNone info
-  
-  # t.build info, SymAsgn:
-  #   t.addSymUse info, PackedSymId 42 # SymId 42 is result
+  var strm = newStringStream("""
+  a = Scalar {
+    Typed 3
+    IntVal 42
+  }
+  """)
+  L.open(strm)
+  var data = TokensData()
+  # data.fill(L)
 
-  #   t.build info, Add:
-  #     t.addSymUse info, PackedSymId 0
-  #     t.build info, Scalar:
-  #       t.addTyped info, Int32Id
-  #       t.addIntVal lit.numbers, info, 4
+  for tok in tokenize(L):
+    echo tok
+    data.s.add tok.s
+    data.kind.add tok.kind
   
-  # # SymId 0 = 1 + 4
-  # # 1 <= SymId 0 < 6
-  # t.build info, Checked:
-  #   t.addImmediateVal info, 0
-  #   t.addCheckType info, Range
-  #   t.build info, And:
-  #     t.build info, Lt:
-  #       t.addSymUse info, PackedSymId 42
-  #       t.build info, Scalar:
-  #         t.addTyped info, Int32Id
-  #         t.addIntVal lit.numbers, info, 6
-      
-  #     t.build info, Le:
-  #       t.build info, Scalar:
-  #         t.addTyped info, Int32Id
-  #         t.addIntVal lit.numbers, info, 1
-  #       t.addSymUse info, PackedSymId 42
-  
-  # t.build info, SymAsgn:
-  #   t.addSymUse info, PackedSymId 43
+  parse(p, data)
 
-  #   t.build info, Conv:
-  #     t.addTyped info, BitVecId
-  #     t.addTyped info, Int32Id
-  #     t.addSymUse info, PackedSymId 42
-  
-  # Test Phi
-  t.build info, SymAsgn:
-    t.addSymUse info, PackedSymId 0
-    t.build info, Scalar:
-      t.addTyped info, Int32Id
-      # t.addNone info
-      t.addIntVal lit.numbers, info, 0
-  
-  t.build info, SymAsgn:
-    t.addSymUse info, PackedSymId 99_0 # a
-    t.build info, Scalar:
-      t.addTyped info, Bool8Id
-      t.addIntVal lit.numbers, info, 1
-  
-  t.build info, SymAsgn:
-    t.addSymUse info, PackedSymId 99_1 # b
-    t.build info, Scalar:
-      t.addTyped info, Bool8Id
-      t.addIntVal lit.numbers, info, 1
-  
-  t.build info, SymAsgn:
-    t.addSymUse info, PackedSymId 1
-    t.build info, Add:
-      t.addSymUse info, PackedSymId 0
-      t.build info, Scalar:
-        t.addTyped info, Int32Id
-        t.addIntVal lit.numbers, info, 1
-  
-  t.build info, SymAsgn:
-    t.addSymUse info, PackedSymId 2
-    t.build info, Add:
-      t.addSymUse info, PackedSymId 0
-      t.build info, Scalar:
-        t.addTyped info, Int32Id
-        t.addIntVal lit.numbers, info, 2
-  
-  t.build info, SymAsgn:
-    t.addSymUse info, PackedSymId 42
-    t.build info, Phi:
-      t.addTyped info, Int32Id
-      t.addSymUse info, PackedSymId 0
-      t.build info, Det:
-        t.addSymUse info, PackedSymId 99_0
-
-        t.addSymUse info, PackedSymId 1
-      
-      t.build info, Det:
-        t.build info, And:
-          t.addSymUse info, PackedSymId 99_1
-          t.build info, Not:
-            t.addSymUse info, PackedSymId 99_0
-
-        t.addSymUse info, PackedSymId 2
-  
-  t.build info, Checked:
-    t.addImmediateVal info, 0
-    t.addCheckType info, Range
-    t.build info, Lt:
-      t.build info, Scalar:
-        t.addTyped info, Int32Id
-        t.addIntVal lit.numbers, info, 1
-      t.addSymUse info, PackedSymId 42
 
   var s = ""
-  render(t, s, lit)
+  render(p.t, s, p.numbers, p.strings)
   echo s
 
   let cfg = Z3_mk_config()
@@ -394,12 +308,13 @@ when isMainModule:
   
   Z3_set_param_value(cfg, "well_sorted_check", "true")
   Z3_set_param_value(cfg, "trace", "true")
-  
-  var c = Z3Gen(z3: Z3_mk_context(cfg), lit: lit)
+  var c = Z3Gen(z3: Z3_mk_context(cfg), lit: Literals())
   c.types = initTypeGraph(Literals())
+  c.lit.numbers = p.numbers
+  # c.lit.strings = p.strings
   Z3_set_error_handler(c.z3, onErr)
   Z3_set_ast_print_mode(c.z3, Z3_PRINT_SMTLIB_COMPLIANT)
 
-  gen(c, t)
+  gen(c, p.t)
   # echo toString(c.z3, c.syms[PackedSymId 42])
   # echo toString(c.z3, c.syms[PackedSymId 43])

@@ -10,17 +10,22 @@ type
     Assert
     Refinement
 
+  SymKind* = enum
+    Var
+    Phi
+
   NodeKind* = enum
     None
     ImmediateVal
     IntVal
     Typed
     CheckTypeVal
+    SymKindVal
 
     ExternalSymUse
 
     SymUse
-    SymAsgn # {ImmediateVal, Scalar | Vector | (Add | Sub | Div | Mul | Mod)}
+    SymAsgn # {SymUse, SymKindVal, Scalar | Vector | (Add | Sub | Div | Mul | Mod)}
 
     Scalar # {ValueType, ImmediateVal+ | None}
     Vector # {Scalar, ImmediateVal}
@@ -87,7 +92,13 @@ template toX*(k: NodeKind; operand: uint32): uint32 =
 type
   Tree* = object
     nodes: seq[Node]
-    
+
+proc pop*(tree: var Tree): Node =
+  pop(tree.nodes)
+
+proc add*(tree: var Tree, n: Node) =
+  add(tree.nodes, n)
+
 
 proc prepare*(tree: var Tree; info: PackedLineInfo; kind: NodeKind): PatchPos =
   result = PatchPos tree.nodes.len
@@ -130,13 +141,30 @@ proc addIntVal*(t: var Tree; integers: var BiTable[int64]; info: PackedLineInfo;
 proc addCheckType*(t: var Tree; info: PackedLineInfo; x: CheckType) =
   t.nodes.add Node(x: toX(CheckTypeVal, cast[uint32](x)), info: info)
 
+proc addSymKind*(t: var Tree; info: PackedLineInfo; x: SymKind) =
+  t.nodes.add Node(x: toX(SymKindVal, cast[uint32](x)), info: info)
+
+
+template reservePos*(t: var Tree; info: PackedLineInfo; varName): untyped =
+  t.addNone info
+  let varName = t.len - 1
+
+proc updateReserve*(t: var Tree; reserved: int) =
+  t.nodes[reserved] =  t.nodes[^1]
+  discard t.nodes.pop()
+
+
 proc immediateVal*(n: Node): int {.inline.} =
   assert n.kind == ImmediateVal
   result = cast[int](n.operand)
 
-proc checkTypeVal*(n: Node): CheckType =
+proc checkType*(n: Node): CheckType =
   assert n.kind == CheckTypeVal
   cast[CheckType](n.operand)
+
+proc symKind*(n: Node): SymKind =
+  assert n.kind == SymKindVal
+  cast[SymKind](n.operand)
 
 proc typeId*(n: Node): TypeId =
   assert n.kind == Typed
@@ -248,7 +276,7 @@ proc rangeBounds*(t: Tree, n: NodePos): Slice[uint32] =
   let (le, ri) = sons2(t,n)
   t[le].operand .. t[ri].operand
 
-proc render*(t: Tree; n: NodePos; s: var string; lit: Literals; nesting = 0) =
+proc render*(t: Tree; n: NodePos; s: var string; numbers: BiTable[int64], strings: BiTable[string]; nesting = 0) =
   for _ in 0..<nesting: s.add "  "
   case t[n].kind:
   of None: s.add "None"
@@ -257,7 +285,7 @@ proc render*(t: Tree; n: NodePos; s: var string; lit: Literals; nesting = 0) =
     s.add $t[n].immediateVal
   of IntVal:
     s.add "IntVal "
-    s.add $lit.numbers[t[n].litId]
+    s.add $numbers[t[n].litId]
   of SymUse:
     s.add "SymUse "
     s.add $(PackedSymId t[n].operand)
@@ -265,20 +293,23 @@ proc render*(t: Tree; n: NodePos; s: var string; lit: Literals; nesting = 0) =
     s.add '<' & $t[n].operand & '>'
   of CheckTypeVal:
     s.add "CheckTypeVal "
-    s.add $t[n].checkTypeVal
+    s.add $t[n].checkType
+  of SymKindVal:
+    s.add "SymKindVal "
+    s.add $t[n].symKind
   else:
     s.add $t[n].kind
     s.add " {\n"
     for i in sons(t, n):
-      render(t, i, s, lit, nesting + 1)
+      render(t, i, s, numbers, strings, nesting + 1)
       s.add "\n"
     
     for i in 0..<nesting: s.add "  "
     s.add "}"
 
-proc render*(t: Tree; s: var string; lit: Literals) =
+proc render*(t: Tree; s: var string; numbers: BiTable[int64], strings: BiTable[string]) =
   var i = 0
   while i < t.len:
-    render t, NodePos i, s, lit
+    render t, NodePos i, s, numbers, strings
     s.add '\n'
     nextChild t, i
