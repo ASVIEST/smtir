@@ -14,6 +14,7 @@ type
     IntValWaitNumber
     ImmediateWaitNumber
     TypedWaitNumber
+    CheckTypeValWaitIdent
 
   Parser* = object
     t*: Tree
@@ -30,12 +31,13 @@ type
 
 
 import std/hashes
+template pos: auto = p.tokPos
 template tokKind: untyped = tok.kind[pos]
 template tokS: untyped = tok.s[pos]
 
-proc build(p: var Parser, tok: TokensData, pos: int = p.tokPos)
+# proc build(p: var Parser, tok: TokensData)
 import ../packed_syms
-proc buildSimpleExpr(p: var Parser, tok: TokensData, pos: int = p.tokPos) =
+proc buildSimpleExpr(p: var Parser, tok: TokensData) =
   var info = PackedLineInfo.default
   case tokKind
   of keyword(IntVal):
@@ -44,11 +46,12 @@ proc buildSimpleExpr(p: var Parser, tok: TokensData, pos: int = p.tokPos) =
     p.st = ImmediateWaitNumber
   of keyword(Typed):
     p.st = TypedWaitNumber
-
+  of keyword(CheckTypeVal):
+    p.st = CheckTypeValWaitIdent
+  of NewLine: discard
   of Number:
     var val: int
     if parseInt(tokS, val) != len(tokS):
-      # p.t.addError(errInvalidNumber, tok.s)
       raiseAssert "Invalid number:  " & tokS
     
     case p.st
@@ -60,64 +63,69 @@ proc buildSimpleExpr(p: var Parser, tok: TokensData, pos: int = p.tokPos) =
       p.t.addTyped info, TypeId(val)
     else:
       raiseAssert "Use {IntVal, ImmediateVal, Typed} before number"
+    
+    p.st = Nop
   of Ident:
-    if tokS notin p.syms:
-      p.syms[tokS] = SymId(p.symId)
-      p.lastId = SymId(p.symId)
-      inc p.symId
+    case p.st
+    of CheckTypeValWaitIdent:
+      let typ: CheckType =
+        case tokS
+        of "Range": Range
+        of "Index": Index
+        of "Overflow": Overflow
+        of "Assert": Assert
+        of "Refinement": Refinement
+        else:
+          raiseAssert "CheckType should be in {Range, Index, Overflow, Assert, Refinement}"
+      
+      p.t.addCheckType info, typ
+      p.st = Nop
+    else:
+      if tokS notin p.syms:
+        p.syms[tokS] = SymId(p.symId)
+        p.lastId = SymId(p.symId)
+        inc p.symId
 
-    p.t.addSymUse info, toPacked(p.syms[tokS], uint16 p.symsCnt[p.syms[tokS]])
+      p.t.addSymUse info, toPacked(p.syms[tokS], uint16 p.symsCnt[p.syms[tokS]])
   of LPar:
     raiseAssert "Unsupported"
-    # buildExpr(p, tok)
-    # if p
   of CurlyLe:
-    inc p.tokPos # {
-    while tok.kind[p.tokPos] != CurlyRi:
+    inc pos # {
+    while tok.kind[pos] != CurlyRi:
       buildSimpleExpr(p, tok)
 
   elif tokKind.byte <= lastKeyword:
     if tokKind == keyword(Phi): p.symKind = Phi
-
-    inc p.tokPos
     build p.t, info, NodeKind(tokKind):
+      inc pos # Node -> CurlyLe
       buildSimpleExpr(p, tok)
+  
   else:
-    # echo "heh"
-    # inc p.tokPos
-    # build(p, tok)
-    discard
+    raiseAssert "Inexpected token with kind:  " & $tokKind
 
-  inc p.tokPos
+  inc pos
 
-proc build(p: var Parser, tok: TokensData, pos: int = p.tokPos) =
-  ## expr: asgn
-  ## asgn: ident = rval
-
+proc parseExprStmt(p: var Parser, tok: TokensData) =
+  # (Node {}) | (Ident = Node {})
   var info = PackedLineInfo.default
-  case tokKind
-  of Newline: discard
-  of Asgn:
-    let (l, r) = (p.tokPos - 1, p.tokPos + 1)
+  let nextTok = p.tokPos + 1
+  if tok.kind[nextTok] == Asgn:
     build p.t, info, SymAsgn:
-      buildSimpleExpr(p, tok, l)
-      inc(p.symsCnt, p.lastId)
+      buildSimpleExpr(p, tok) # Ident -> Asgn
+      
       p.t.reservePos(info, reserved)
-      buildSimpleExpr(p, tok, r)
+      inc pos # Asgn -> Node
+      buildSimpleExpr(p, tok)
 
       p.t.addSymKind info, p.symKind
+      # inc(p.symsCnt, p.lastId)
       p.t.updateReserve(reserved)
-  
-  of lvalueKeywords:
+  else:
     buildSimpleExpr(p, tok)
 
-  else: discard
-  #   buildSimpleExpr(p, tok)
-  inc p.tokPos
-
 proc parse*(p: var Parser, tok: TokensData) =
-  while p.tokPos < len(tok.s):
-    build(p, tok)
+  while p.tokPos < len(tok.s) - 1:
+    parseExprStmt(p, tok)
 
 when isMainModule:
   var p = Parser()
@@ -126,12 +134,17 @@ when isMainModule:
   import std/lexbase
 
   var strm = newStringStream("""
-  a = Phi {
+  a = Scalar {
+    Typed 3
     IntVal 1
-    Scalar {
+  }
+  Checked {
+    ImmediateVal 0
+    CheckTypeVal Assert
+    Le {
+      a
       IntVal 5
     }
-    IntVal 3
   }
   """)
   L.open(strm)

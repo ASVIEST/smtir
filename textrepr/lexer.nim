@@ -181,6 +181,7 @@ proc getTok*(L: var Lexer, tok: var Token) =
     if L.buf[L.bufpos + 1] in '1'..'9':
       raiseAssert "Leading zero..."
     else:
+      tok.kind = Number
       tok.s = "0"
 
   of '1'..'9': getNumber(L, tok)

@@ -286,13 +286,23 @@ when isMainModule:
     Typed 3
     IntVal 42
   }
+  Checked {
+    ImmediateVal 0
+    CheckTypeVal Assert
+    Lt {
+      Scalar {
+        Typed 3
+        IntVal 43
+      }
+      a
+    }
+  }
   """)
   L.open(strm)
   var data = TokensData()
   # data.fill(L)
 
   for tok in tokenize(L):
-    echo tok
     data.s.add tok.s
     data.kind.add tok.kind
   
